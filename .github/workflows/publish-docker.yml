@@ -5,20 +5,22 @@ on:
     tags:
       - 'v*.*.*'
 
-permissions:
-  contents: read
-  packages: write
-
 jobs:
-  build-and-push:
-    runs-on: ${{ matrix.runner }}
+  build_push:
+    permissions:
+      contents: read
+      packages: write
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - platform: linux/amd64
+          - arch: amd64
+            platform: linux/amd64
             runner: ubuntu-latest
-          - platform: linux/arm64
+          - arch: arm64
+            platform: linux/arm64
             runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,28 +35,56 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/pocket-tts
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-          labels: |
-            org.opencontainers.image.licenses=MIT
-            org.opencontainers.image.authors=Kyutai Labs, kun432
-
-      - name: Build and push Docker image
+      - name: Build and push image for ${{ matrix.arch }}
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
+          tags: ghcr.io/${{ github.repository }}:${{ matrix.arch }}-${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.authors=Kyutai Labs, kun432
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  merge:
+    name: Create and push manifest list
+    runs-on: ubuntu-latest
+    needs: build_push
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Create manifest list and push
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          TAG="${{ github.ref_name }}"
+
+          echo "Creating manifest list for ${IMAGE}:${TAG}"
+
+          DIGEST_AMD64=$(docker buildx imagetools inspect ${IMAGE}:amd64-${TAG} --raw | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest')
+          DIGEST_ARM64=$(docker buildx imagetools inspect ${IMAGE}:arm64-${TAG} --raw | jq -r '.manifests[] | select(.platform.architecture=="arm64") | .digest')
+
+          echo "amd64 digest: $DIGEST_AMD64"
+          echo "arm64 digest: $DIGEST_ARM64"
+
+          docker manifest create ${IMAGE}:${TAG} \
+            ${IMAGE}@${DIGEST_AMD64} \
+            ${IMAGE}@${DIGEST_ARM64}
+
+          docker manifest annotate ${IMAGE}:${TAG} ${IMAGE}@${DIGEST_ARM64} --os linux --arch arm64 --variant v8
+          docker manifest annotate ${IMAGE}:${TAG} ${IMAGE}@${DIGEST_AMD64} --os linux --arch amd64
+
+          docker manifest push ${IMAGE}:${TAG}
