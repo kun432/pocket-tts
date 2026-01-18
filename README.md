@@ -139,3 +139,14 @@ Use of our model must comply with all applicable laws and regulations and must n
 Manu Orsini*, Simon Rouard*, Gabriel De Marmiesse*, Václav Volhejn, Neil Zeghidour, Alexandre Défossez
 
 *equal contribution
+
+---
+
+## About this fork
+
+This is a fork of [kyutai-labs/pocket-tts](https://github.com/kyutai-labs/pocket-tts) maintained by [kun432](https://github.com/kun432).
+
+**Modifications:**
+- Added multi-platform Docker image build (AMD64/ARM64) for GitHub Container Registry
+
+This fork is licensed under the same MIT License as the original project.

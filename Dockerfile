@@ -1,6 +1,7 @@
 FROM ghcr.io/astral-sh/uv:debian
 
 WORKDIR /app
+COPY ./LICENSE .
 COPY ./pyproject.toml .
 COPY ./uv.lock .
 COPY ./README.md .
